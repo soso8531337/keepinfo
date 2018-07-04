@@ -162,7 +162,8 @@ static uint8_t get_nearest_server(user_info *user, server_info *server)
 		}
 	}
 	mxmlDelete(tree);
-
+	/*remove XML_SERVER*/
+	remove(XML_SERVER);
 	if(tdistance == DBL_MAX){
 		printf("No Found Server\n");
 		return 5;
@@ -472,7 +473,8 @@ uint8_t speed_get_internet_info(char *ip, char *isp)
 	}
 	strcpy(tuser.isp, paytr);
 	mxmlDelete(tree);
-
+	/*remove the XML_WAN*/	
+	remove(XML_WAN);
 	/*return*/
 	memcpy(&(cspeed.user), &tuser, sizeof(tuser));
 	strcpy(ip, cspeed.user.ip);

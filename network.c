@@ -5,7 +5,9 @@
 #include <errno.h>
 #include <pthread.h>
 #include <netdb.h>
-//#include <net/if.h>
+#ifndef OPENWRT
+#include <net/if.h>
+#endif
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -26,6 +28,7 @@
 #define ETH_NAME		"eth2.2"
 #endif
 #define APCLI_NAME		"apcli0"
+#define NAT_FILE	"/tmp/nattype"
 
 typedef struct _thread_info{
 	pthread_t pnet;	/*net monitor thread*/
@@ -238,7 +241,6 @@ static void handle_network_nattype(int event, int *type)
 {
 	FILE *fp;
 	char line[128] = {0};
-#define NAT_FILE	"/tmp/nattype"
 	if(event == REMOVE){
 		if(!access(NAT_FILE, F_OK)){
 			remove(NAT_FILE);
@@ -255,6 +257,8 @@ static void handle_network_nattype(int event, int *type)
 			*type = atoi(line);
 			printf("Nat Type:%d\n", *type);
 		}
+		/*just used onece*/
+		remove(NAT_FILE);
 	}
 }
 
@@ -293,7 +297,8 @@ static int update_network_mode(int event, char *devname, char *ip)
 					netcont.report_status |= (1 << NET_WIRELESS);
 				}
 			}
-			netcont.report_status |= (1 << NET_MODE);
+			/*network mode not set bit, let speed thread set*/
+			//netcont.report_status |= (1 << NET_MODE);
 			/*Need to notify speed thread*/
 			if(netcont.onoff &(1<<NET_SPED)){
 				wakenum++;
@@ -507,7 +512,7 @@ static void *network_speed(void *arg)
 		/*Sleep more than 5 minite, if the network is stable, we begin test*/
 		/*if tmpwake-wakenum>1, the prove mode have changed, so the test 
 		  result is bad, we need to test again*/		
-		for(slpcont = 0; slpcont < 60; slpcont++){
+		for(slpcont = 0; slpcont < 600; slpcont++){
 			if((*quit)){
 				printf("Quit2..\n");
 				return NULL;
@@ -530,7 +535,8 @@ static void *network_speed(void *arg)
 			/*we dose not clear bit, because the speed may not reported*/
 			//goto CLAR_BIT;			
 			pthread_mutex_lock(&mlock);
-			netcont.report_status |= (1 << NET_SPED);
+			netcont.report_status |= (1 << NET_SPED);			
+			netcont.report_status |= (1 << NET_MODE);
 			printf("Speed Result:\n\tMode:%d\n\tIP:%s\n\tLatency:%dms\n\tDownload:%5.2fMbps\n\tUpload:%5.2fMbps\n",
 					netcont.speed.mode, netcont.speed.ip, netcont.speed.latency, netcont.speed.dwspeed, netcont.speed.upspeed);			
 			pthread_mutex_unlock(&mlock);
@@ -546,6 +552,7 @@ static void *network_speed(void *arg)
 		memcpy(&(netcont.speed), &vspeed, sizeof(vspeed));
 		netcont.speed.mode = netcont.mode.mode;
 		netcont.report_status |= (1 << NET_SPED);
+		netcont.report_status |= (1 << NET_MODE);		
 		printf("Speed Test Finish:\n\tMode:%d\n\tIP:%s\n\tLatency:%dms\n\tDownload:%5.2fMbps\n\tUpload:%5.2fMbps\n",
 				netcont.speed.mode, netcont.speed.ip, netcont.speed.latency, netcont.speed.dwspeed, netcont.speed.upspeed);
 		pthread_mutex_unlock(&mlock);
@@ -554,6 +561,7 @@ static void *network_speed(void *arg)
 	CLAR_BIT:
 		pthread_mutex_lock(&mlock);
 		netcont.report_status &= ~(1 << NET_SPED);
+		netcont.report_status &= ~(1 << NET_MODE);
 		pthread_mutex_unlock(&mlock);
 	}
 
@@ -716,6 +724,7 @@ uint8_t network_collect_wireless(wireless_info *wireless)
 uint8_t network_collect_nattype(nat_info *nat)
 {
 	uint8_t onoff = 0, needrep = 0;
+	
 	if(!nat){
 		return 1;
 	}
@@ -724,12 +733,26 @@ uint8_t network_collect_nattype(nat_info *nat)
 	needrep = (netcont.report_status& (1 << NET_NAT));
 	memcpy(nat, &(netcont.nat), sizeof(netcont.nat));
 	/*Reset status to 0*/
-	netcont.report_status &= ~(1 << NET_NAT);	
+	netcont.report_status &= ~(1 << NET_NAT);
 	pthread_mutex_unlock(&mlock);
 
-	if(!onoff || !needrep){
-		printf("NAT Report Off[%d:%d]\n", onoff, needrep);
+	if(!onoff){
+		printf("NAT Report Off[%d]\n", onoff);
 		return 2;
+	}
+	if(!needrep){
+		FILE *fp;
+		char line[128] = {0};
+		
+		fp = fopen(NAT_FILE, "r");
+		if(fp == NULL){
+			printf("No NAT Report[%d]\n", needrep);
+			return 2;
+		}
+		fgets(line, 127, fp);
+		fclose(fp);
+		remove(NAT_FILE);
+		nat->nattype= atoi(line);
 	}
 
 	return 0;

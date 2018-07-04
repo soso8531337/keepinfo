@@ -3,6 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "request.h"
 #include "module.h"
@@ -223,9 +227,73 @@ static uint8_t kepinfo_post_data(void)
 	return 0;
 }
 
+static int  handler_sig(void)
+{
+	struct sigaction act;
+	memset(&act, 0, sizeof(struct sigaction));
+	act.sa_handler = SIG_IGN;
+	sigfillset(&act.sa_mask);
+	if ((sigaction(SIGCHLD, &act, NULL) == -1) ||
+		(sigaction(SIGINT, &act, NULL) == -1)){
+		printf("Fail to sigaction\n");
+	}
+
+	act.sa_handler = SIG_IGN;
+	if (sigaction(SIGPIPE, &act, NULL) == -1) {
+		printf("Fail to signal(SIGPIPE)\n");
+	}
+	return 0;
+}
+
+static int dm_daemon(const char *fname, const char *workdir)
+{
+	int pid, i;
+
+	switch(fork()){
+		/* fork error */
+		case -1:
+			exit(1);
+
+		/* child process */
+		case 0:
+		/* obtain a new process group */
+			if((pid = setsid()) < 0) {
+				exit(1);
+			}
+
+			/* close all descriptors */
+			for (i = getdtablesize(); i >= 0; --i)
+				close(i);
+
+			i = open("/dev/null", O_RDWR); /* open stdin */
+			dup(i); /* stdout */
+			dup(i); /* stderr */
+
+			umask(000);
+
+			if (workdir)
+				chdir(workdir); /* chdir to /tmp ? */
+			return 0;
+		/* parent process */
+		default:
+			exit(0);
+	}
+
+	return -1;
+}
+
 int main(int argc, char **argv)
 {
 	int internal  = 0, keeptime = 0;
+
+	if(argc < 2){
+		printf("Daemon Mode\n");
+		dm_daemon(NULL, NULL);
+	}else{
+		printf("Debug Mode\n");
+	}
+	/*handle signal*/
+	handler_sig();
 	/*init libcurl first*/
 	request_init();
 	/*init collect module*/
