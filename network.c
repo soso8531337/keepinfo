@@ -204,7 +204,7 @@ static int get_wireless_ssid_password(char *ssid, char *password)
 	}
 
 	while(fgets(line, 511, fp)){
-		if(sscanf(line, "%s=%[^\n]", key, value) != 2){
+		if(sscanf(line, "%[^=]=%[^\n]", key, value) != 2){
 			continue;
 		}
 		if(!strcmp(key, "ApCliSsid1")){
