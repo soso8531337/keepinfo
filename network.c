@@ -541,12 +541,16 @@ static void *network_speed(void *arg)
 					netcont.speed.mode, netcont.speed.ip, netcont.speed.latency, netcont.speed.dwspeed, netcont.speed.upspeed);			
 			pthread_mutex_unlock(&mlock);
 			continue;
-		}
+		}	
 		/*test spped*/
+	#ifdef OPENWRT
 		if(speed_test_speed(&(vspeed.latency), &(vspeed.upspeed), &(vspeed.dwspeed)) != 0){
 			printf("Test Speed Failed\n");
 			goto CLAR_BIT;
 		}
+	#else
+		printf("[%d]Linux Not Support Speed Test[Memory Not Enough]\n", __LINE__);
+	#endif
 		/*test speed successful*/
 		pthread_mutex_lock(&mlock);
 		memcpy(&(netcont.speed), &vspeed, sizeof(vspeed));
